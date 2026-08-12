@@ -1187,3 +1187,204 @@ export function showPage(show: TVShow, entries: any[], ratingDist: any[], avgRat
     });
   </script>`;
 }
+
+// ─── Documentary Card ─────────────────────────────────────────────────────────
+
+function docCard(doc: Documentary, entry?: any): string {
+  const hasWatched = !!entry;
+  const liked = entry?.liked;
+  const hrs = Math.floor(doc.runtime / 60);
+  const mins = doc.runtime % 60;
+  const runtimeStr = hrs > 0 ? `${hrs}h${mins > 0 ? ` ${mins}m` : ''}` : `${mins}m`;
+  return `
+    <a href="/docs/${doc.id}" class="movie-card">
+      <div class="poster-wrap">
+        <img src="${esc(doc.poster)}" alt="${esc(doc.title)}" loading="lazy">
+        ${hasWatched ? `<div class="watched-badge">
+          ${stars(entry.rating)}
+          ${liked ? '<span class="heart-badge">♥</span>' : ''}
+        </div>` : ''}
+        <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.75);border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600;color:#fff">${runtimeStr}</div>
+      </div>
+      <div class="card-info">
+        <span class="card-title">${esc(doc.title)}</span>
+        <span class="card-year">${doc.year} · ${esc(doc.genres[0])}</span>
+      </div>
+    </a>`;
+}
+
+// ─── Docs Browse Page ─────────────────────────────────────────────────────────
+
+export function docsPage(docs: Documentary[], query: string, genre: string, allGenres: string[], user: any): string {
+  return `
+  <div class="search-hero">
+    <div style="max-width:1200px;margin:0 auto">
+      <div class="page-title" style="margin-bottom:16px">Documentaries</div>
+      <form class="search-form" action="/docs" method="get">
+        <input type="text" name="q" value="${esc(query)}" placeholder="Search by title, director, subject, genre..." autofocus>
+        <button type="submit">Search</button>
+      </form>
+      <div class="genre-filters" style="margin-top:16px">
+        <a href="/docs" class="genre-btn${!genre ? ' active' : ''}">All</a>
+        ${allGenres.map(g => `<a href="/docs?genre=${encodeURIComponent(g)}" class="genre-btn${genre === g ? ' active' : ''}">${esc(g)}</a>`).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    ${query || genre ? `<div style="color:var(--muted);font-size:14px;margin-bottom:20px">${docs.length} result${docs.length !== 1 ? 's' : ''} ${query ? `for "${esc(query)}"` : ''} ${genre ? `in ${esc(genre)}` : ''}</div>` : ''}
+    <div class="movies-grid">
+      ${docs.map(d => docCard(d)).join('')}
+    </div>
+    ${!docs.length ? `<div class="empty-state"><p>No documentaries found.</p></div>` : ''}
+  </div>`;
+}
+
+// ─── Doc Detail Page ──────────────────────────────────────────────────────────
+
+export function docPage(doc: Documentary, entries: any[], ratingDist: any[], avgRating: number, totalRatings: number, userEntry: any, inWatchlist: boolean, user: any): string {
+  const maxCount = Math.max(...ratingDist.map((r: any) => Number(r.count)), 1);
+  const displayRating = totalRatings > 0 ? avgRating : doc.avgRating;
+  const displayTotal = totalRatings > 0 ? totalRatings : doc.ratingsCount;
+  const hrs = Math.floor(doc.runtime / 60);
+  const mins = doc.runtime % 60;
+  const runtimeStr = hrs > 0 ? `${hrs}h ${mins > 0 ? `${mins}m` : ''}` : `${mins}m`;
+
+  return `
+  <div class="film-hero">
+    <div class="film-hero-backdrop" style="background-image:url(${esc(doc.backdrop)})"></div>
+    <div class="film-hero-inner">
+      <div class="film-poster">
+        <img src="${esc(doc.poster)}" alt="${esc(doc.title)}">
+      </div>
+      <div class="film-info">
+        <h1 class="film-title">${esc(doc.title)}</h1>
+        <div class="film-meta">
+          <span>${doc.year}</span>
+          <span class="sep">·</span>
+          <span>${runtimeStr}</span>
+          <span class="sep">·</span>
+          <span>${esc(doc.language)}</span>
+          <span class="sep">·</span>
+          <span>${esc(doc.platform)}</span>
+        </div>
+        <div class="film-director">Directed by <a href="/docs?q=${encodeURIComponent(doc.director)}">${esc(doc.director)}</a></div>
+        <div class="genres">${doc.genres.map(g => `<span class="genre-tag">${esc(g)}</span>`).join('')}</div>
+        <p class="film-synopsis">${esc(doc.synopsis)}</p>
+        ${doc.featuring.length ? `<div class="film-cast"><strong>Featuring:</strong> ${esc(doc.featuring.join(', '))}</div>` : ''}
+        <div class="film-rating-display">
+          <div>
+            <div class="avg-stars">${'★'.repeat(Math.round(displayRating / 2))}</div>
+            <div style="font-size:12px;color:var(--muted)">${displayRating.toFixed(1)} / 10 · ${displayTotal.toLocaleString()} ratings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="two-col">
+      <div class="main-col">
+        ${user ? `
+        <div class="log-section" style="margin-bottom:32px">
+          <h3>${userEntry ? 'Update your log' : 'Log this documentary'}</h3>
+          <form method="post" action="/docs/${esc(doc.id)}/log">
+            <div class="form-group">
+              <label>Rating</label>
+              <div class="star-row" id="starRow">
+                ${[1,2,3,4,5,6,7,8,9,10].map(i => `<button type="button" class="star-btn${userEntry?.rating >= i ? ' active' : ''}" data-val="${i}">★</button>`).join('')}
+              </div>
+              <input type="hidden" name="rating" id="ratingInput" value="${userEntry?.rating || ''}">
+              <div style="font-size:12px;color:var(--muted);margin-top:4px" id="ratingLabel">${userEntry?.rating ? `${userEntry.rating}/10` : 'Click to rate'}</div>
+            </div>
+            <div class="form-group">
+              <label>Review (optional)</label>
+              <textarea name="review" rows="3" placeholder="Share your thoughts...">${esc(userEntry?.review || '')}</textarea>
+            </div>
+            <div style="display:flex;gap:20px;align-items:center;margin-bottom:16px">
+              <div class="liked-toggle">
+                <input type="checkbox" name="liked" value="1" id="liked" ${userEntry?.liked ? 'checked' : ''}>
+                <label for="liked" title="Like this documentary">♥</label>
+                <span style="font-size:13px;color:var(--muted)">Like</span>
+              </div>
+              <div class="form-group" style="flex:1;margin:0">
+                <input type="date" name="watched_date" value="${esc(userEntry?.watched_date || new Date().toISOString().split('T')[0])}">
+              </div>
+            </div>
+            <button type="submit" class="btn-primary">${userEntry ? 'Update log' : 'Save to diary'}</button>
+          </form>
+        </div>
+
+        <div style="margin-bottom:32px">
+          <form method="post" action="/docs/${esc(doc.id)}/watchlist">
+            <input type="hidden" name="action" value="${inWatchlist ? 'remove' : 'add'}">
+            <button type="submit" class="btn-ghost" style="display:inline-flex;align-items:center;gap:6px">
+              ${inWatchlist ? '✓ On watchlist' : '+ Add to watchlist'}
+            </button>
+          </form>
+        </div>
+        ` : `<div style="margin-bottom:32px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center">
+          <p style="color:var(--muted);margin-bottom:12px">Sign in to log this documentary</p>
+          <a href="/login" class="btn-primary">Sign in</a>
+        </div>`}
+
+        <div class="section-title">Reviews</div>
+        ${entries.length ? `<div class="reviews-grid">
+          ${entries.map(e => `
+          <div class="review-card">
+            <div class="review-header">
+              <div class="avatar" style="width:36px;height:36px;background:${esc(e.avatar_color)};font-size:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff">${(e.display_name || e.username).charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="review-user"><a href="/profile/${esc(e.username)}">${esc(e.display_name)}</a></div>
+                <div class="review-date">${e.watched_date || ''} ${e.rating ? '· ' + stars(Number(e.rating)) : ''} ${e.liked ? '♥' : ''}</div>
+              </div>
+            </div>
+            <div class="review-body">${esc(e.review)}</div>
+          </div>`).join('')}
+        </div>` : `<div class="empty-state"><p>No reviews yet. Be the first!</p></div>`}
+      </div>
+
+      <div class="side-col">
+        <div class="section-title">Rating Distribution</div>
+        <div class="rating-dist">
+          ${[10,9,8,7,6,5,4,3,2,1].map(i => {
+            const row = ratingDist.find((r: any) => Number(r.rating) === i);
+            const count = row ? Number(row.count) : 0;
+            const pct = (count / maxCount) * 100;
+            return `<div class="dist-row">
+              <div class="dist-label">${i}</div>
+              <div class="dist-bar-bg"><div class="dist-bar" style="width:${pct}%"></div></div>
+              <div class="dist-count">${count}</div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div style="margin-top:32px">
+          <div class="section-title">Info</div>
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Director</span><span>${esc(doc.director)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Runtime</span><span>${runtimeStr}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Platform</span><span>${esc(doc.platform)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Country</span><span>${esc(doc.country)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Language</span><span>${esc(doc.language)}</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const btns = document.querySelectorAll('.star-btn');
+      const inp = document.getElementById('ratingInput');
+      const lbl = document.getElementById('ratingLabel');
+      let cur = parseInt(inp.value) || 0;
+      function upd(v) { btns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) <= v)); }
+      upd(cur);
+      btns.forEach(b => {
+        b.addEventListener('mouseover', () => upd(parseInt(b.dataset.val)));
+        b.addEventListener('mouseleave', () => upd(cur));
+        b.addEventListener('click', () => { cur = parseInt(b.dataset.val); inp.value = cur; lbl.textContent = cur + '/10'; upd(cur); });
+      });
+    })();
+  </script>`;
+}

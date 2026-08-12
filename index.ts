@@ -4,7 +4,8 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import db, { q } from "./db.js";
 import { MOVIES, MOVIE_MAP, searchMovies, getMovie } from "./movies.js";
 import { SHOWS, SHOW_MAP, searchShows, getShow } from "./tvshows.js";
-import { layout, homePage, moviePage, showsPage, showPage, profilePage, diaryPage, watchlistPage, listsPage, searchPage, loginPage } from "./templates.js";
+import { DOCS, DOC_MAP, searchDocs, getDoc } from "./documentaries.js";
+import { layout, homePage, moviePage, showsPage, showPage, docsPage, docPage, profilePage, diaryPage, watchlistPage, listsPage, searchPage, loginPage } from "./templates.js";
 
 const app = new Hono();
 
@@ -317,6 +318,89 @@ app.post("/shows/:id/watchlist", async (c) => {
     q("DELETE FROM show_watchlist WHERE user_id = ? AND show_id = ?").run(user.id, showId);
   }
   return c.redirect(withSession(sessionId, `/shows/${showId}`));
+});
+
+// ─── Documentaries ────────────────────────────────────────────────────────────
+
+app.get("/docs", (c) => {
+  const sq = c.req.query("q") || "";
+  const genre = c.req.query("genre") || "";
+  const user = getCurrentUser(c);
+  let results = sq ? searchDocs(sq) : DOCS;
+  if (genre) results = results.filter(d => d.genres.includes(genre));
+  const allGenres = [...new Set(DOCS.flatMap(d => d.genres))].sort();
+  return c.html(layout(docsPage(results, sq, genre, allGenres, user), "Documentaries — CineLog", user));
+});
+
+app.get("/docs/:id", (c) => {
+  const doc = getDoc(c.req.param("id"));
+  if (!doc) return c.notFound();
+  const user = getCurrentUser(c);
+
+  const allEntries = q(`
+    SELECT dde.*, u.username, u.display_name, u.avatar_color
+    FROM doc_diary_entries dde JOIN users u ON dde.user_id = u.id
+    WHERE dde.doc_id = ? AND dde.review != ''
+    ORDER BY dde.created_at DESC LIMIT 10
+  `).all(doc.id) as any[];
+
+  const ratingDist = q(`
+    SELECT rating, COUNT(*) as count FROM doc_diary_entries
+    WHERE doc_id = ? GROUP BY rating ORDER BY rating
+  `).all(doc.id) as any[];
+
+  const totalRatings = ratingDist.reduce((s: number, r: any) => s + Number(r.count), 0);
+  const avgRating = totalRatings > 0
+    ? ratingDist.reduce((s: number, r: any) => s + Number(r.rating) * Number(r.count), 0) / totalRatings
+    : doc.avgRating;
+
+  let userEntry = null;
+  let inWatchlist = false;
+  if (user) {
+    userEntry = q("SELECT * FROM doc_diary_entries WHERE user_id = ? AND doc_id = ?").get(user.id, doc.id) as any;
+    inWatchlist = !!(q("SELECT id FROM doc_watchlist WHERE user_id = ? AND doc_id = ?").get(user.id, doc.id) as any);
+  }
+
+  return c.html(layout(docPage(doc, allEntries, ratingDist, avgRating, totalRatings, userEntry, inWatchlist, user), `${doc.title} — CineLog`, user));
+});
+
+app.post("/docs/:id/log", async (c) => {
+  const sessionId = getSessionId(c);
+  const user = getCurrentUser(c);
+  if (!user) return c.redirect("/login");
+  const doc = getDoc(c.req.param("id"));
+  if (!doc) return c.notFound();
+
+  const form = await c.req.formData();
+  const rating = form.get("rating") ? parseInt(form.get("rating") as string) : null;
+  const review = (form.get("review") as string || "").trim();
+  const liked = form.get("liked") === "1" ? 1 : 0;
+  const watchedDate = form.get("watched_date") as string || new Date().toISOString().split("T")[0];
+
+  q(`
+    INSERT INTO doc_diary_entries (user_id, doc_id, rating, review, liked, watched_date)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, doc_id) DO UPDATE SET
+      rating = excluded.rating, review = excluded.review,
+      liked = excluded.liked, watched_date = excluded.watched_date
+  `).run(user.id, doc.id, rating, review, liked, watchedDate);
+  q("DELETE FROM doc_watchlist WHERE user_id = ? AND doc_id = ?").run(user.id, doc.id);
+
+  return c.redirect(withSession(sessionId, `/docs/${doc.id}`));
+});
+
+app.post("/docs/:id/watchlist", async (c) => {
+  const sessionId = getSessionId(c);
+  const user = getCurrentUser(c);
+  if (!user) return c.redirect("/login");
+  const form = await c.req.formData();
+  const docId = c.req.param("id");
+  if (form.get("action") === "add") {
+    q("INSERT OR IGNORE INTO doc_watchlist (user_id, doc_id) VALUES (?, ?)").run(user.id, docId);
+  } else {
+    q("DELETE FROM doc_watchlist WHERE user_id = ? AND doc_id = ?").run(user.id, docId);
+  }
+  return c.redirect(withSession(sessionId, `/docs/${docId}`));
 });
 
 const port = Number(process.env.PORT) || 3000;
