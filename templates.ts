@@ -2,6 +2,8 @@ import type { Movie } from "./movies.js";
 import { MOVIE_MAP } from "./movies.js";
 import type { TVShow } from "./tvshows.js";
 import { SHOW_MAP } from "./tvshows.js";
+import type { Documentary } from "./documentaries.js";
+import { DOC_MAP } from "./documentaries.js";
 
 function esc(s: any): string {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -474,6 +476,7 @@ export function layout(content: string, title: string, user: any): string {
       <div class="nav-links">
         <a href="/films">Films</a>
         <a href="/shows">Shows</a>
+        <a href="/docs">Docs</a>
         ${user ? `<a href="/diary">Diary</a><a href="/watchlist">Watchlist</a><a href="/lists">Lists</a>` : ''}
       </div>
       <div class="nav-right">

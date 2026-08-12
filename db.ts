@@ -94,6 +94,28 @@ db.exec(`
     UNIQUE(user_id, show_id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS doc_diary_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    doc_id TEXT NOT NULL,
+    rating INTEGER CHECK(rating >= 1 AND rating <= 10),
+    review TEXT DEFAULT '',
+    liked INTEGER DEFAULT 0,
+    watched_date TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, doc_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS doc_watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    doc_id TEXT NOT NULL,
+    added_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, doc_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 function q(sql: string) {
