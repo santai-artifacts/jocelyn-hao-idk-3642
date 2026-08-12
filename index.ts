@@ -7,12 +7,23 @@ import { layout, homePage, moviePage, profilePage, diaryPage, watchlistPage, lis
 
 const app = new Hono();
 
+// Read session from ?_s= query param (localStorage-injected) OR cookie (fallback)
+function getSessionId(c: any): string | null {
+  return c.req.query("_s") || getCookie(c, "session") || null;
+}
+
 function getCurrentUser(c: any) {
-  const sessionId = getCookie(c, "session");
+  const sessionId = getSessionId(c);
   if (!sessionId) return null;
   const session = q("SELECT user_id FROM sessions WHERE id = ?").get(sessionId) as any;
   if (!session) return null;
   return q("SELECT * FROM users WHERE id = ?").get(session.user_id) as any;
+}
+
+function withSession(sessionId: string | null, path: string): string {
+  if (!sessionId) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}_s=${encodeURIComponent(sessionId)}`;
 }
 
 // ─── Pages ───────────────────────────────────────────────────────────────────
@@ -41,22 +52,25 @@ app.post("/login", async (c) => {
   }
   let user = q("SELECT * FROM users WHERE username = ?").get(username) as any;
   if (!user) {
-    const colors = ['#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899'];
+    const colors = ["#14b8a6", "#8b5cf6", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899"];
     const color = colors[username.length % colors.length];
     q("INSERT INTO users (username, display_name, avatar_color) VALUES (?, ?, ?)").run(username, username, color);
     user = q("SELECT * FROM users WHERE username = ?").get(username) as any;
   }
   const sessionId = crypto.randomUUID();
   q("INSERT INTO sessions (id, user_id) VALUES (?, ?)").run(sessionId, user.id);
+  // Set cookie as fallback for non-iframe contexts
   setCookie(c, "session", sessionId, { path: "/", maxAge: 60 * 60 * 24 * 30 });
-  return c.redirect("/");
+  // Primary: redirect with session in URL so JS can persist it to localStorage
+  return c.redirect(`/?_s=${encodeURIComponent(sessionId)}`);
 });
 
-app.post("/logout", (c) => {
-  const sessionId = getCookie(c, "session");
+app.post("/logout", async (c) => {
+  const form = await c.req.formData();
+  const sessionId = (form.get("_s") as string) || getSessionId(c);
   if (sessionId) q("DELETE FROM sessions WHERE id = ?").run(sessionId);
   deleteCookie(c, "session");
-  return c.redirect("/");
+  return c.redirect("/?_logout=1");
 });
 
 app.get("/films", (c) => {
@@ -102,6 +116,7 @@ app.get("/films/:id", (c) => {
 });
 
 app.post("/films/:id/log", async (c) => {
+  const sessionId = getSessionId(c);
   const user = getCurrentUser(c);
   if (!user) return c.redirect("/login");
   const movie = getMovie(c.req.param("id"));
@@ -120,12 +135,13 @@ app.post("/films/:id/log", async (c) => {
       rating = excluded.rating, review = excluded.review,
       liked = excluded.liked, watched_date = excluded.watched_date
   `).run(user.id, movie.id, rating, review, liked, watchedDate);
-
   q("DELETE FROM watchlist WHERE user_id = ? AND movie_id = ?").run(user.id, movie.id);
-  return c.redirect(`/films/${movie.id}`);
+
+  return c.redirect(withSession(sessionId, `/films/${movie.id}`));
 });
 
 app.post("/films/:id/watchlist", async (c) => {
+  const sessionId = getSessionId(c);
   const user = getCurrentUser(c);
   if (!user) return c.redirect("/login");
   const form = await c.req.formData();
@@ -135,7 +151,7 @@ app.post("/films/:id/watchlist", async (c) => {
   } else {
     q("DELETE FROM watchlist WHERE user_id = ? AND movie_id = ?").run(user.id, movieId);
   }
-  return c.redirect(`/films/${movieId}`);
+  return c.redirect(withSession(sessionId, `/films/${movieId}`));
 });
 
 app.get("/profile/:username", (c) => {
@@ -150,31 +166,31 @@ app.get("/profile/:username", (c) => {
     liked: entries.filter((e: any) => e.liked).length,
     reviews: entries.filter((e: any) => e.review).length,
   };
-
-  const followers = (q("SELECT COUNT(*) as c FROM follows WHERE following_id = ?").get(profileUser.id) as any).c;
-  const following = (q("SELECT COUNT(*) as c FROM follows WHERE follower_id = ?").get(profileUser.id) as any).c;
+  const followers = Number((q("SELECT COUNT(*) as c FROM follows WHERE following_id = ?").get(profileUser.id) as any).c);
+  const following = Number((q("SELECT COUNT(*) as c FROM follows WHERE follower_id = ?").get(profileUser.id) as any).c);
   const isFollowing = currentUser
     ? !!(q("SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?").get(currentUser.id, profileUser.id) as any)
     : false;
 
   return c.html(layout(
-    profilePage(profileUser, currentUser, entries.slice(0, 8), entries.filter((e: any) => e.liked).slice(0, 4), stats, Number(followers), Number(following), isFollowing),
+    profilePage(profileUser, currentUser, entries.slice(0, 8), entries.filter((e: any) => e.liked).slice(0, 4), stats, followers, following, isFollowing),
     `${profileUser.display_name} — CineLog`, currentUser
   ));
 });
 
 app.post("/profile/:username/follow", async (c) => {
+  const sessionId = getSessionId(c);
   const user = getCurrentUser(c);
   if (!user) return c.redirect("/login");
   const profileUser = q("SELECT * FROM users WHERE username = ?").get(c.req.param("username")) as any;
-  if (!profileUser || profileUser.id === user.id) return c.redirect(`/profile/${c.req.param("username")}`);
+  if (!profileUser || profileUser.id === user.id) return c.redirect(withSession(sessionId, `/profile/${c.req.param("username")}`));
   const form = await c.req.formData();
   if (form.get("action") === "follow") {
     q("INSERT OR IGNORE INTO follows (follower_id, following_id) VALUES (?, ?)").run(user.id, profileUser.id);
   } else {
     q("DELETE FROM follows WHERE follower_id = ? AND following_id = ?").run(user.id, profileUser.id);
   }
-  return c.redirect(`/profile/${profileUser.username}`);
+  return c.redirect(withSession(sessionId, `/profile/${profileUser.username}`));
 });
 
 app.get("/diary", (c) => {
@@ -199,7 +215,6 @@ app.get("/lists", (c) => {
     LEFT JOIN list_movies lm ON l.id = lm.list_id
     WHERE l.user_id = ? GROUP BY l.id ORDER BY l.created_at DESC
   `).all(user.id) as any[];
-
   for (const list of userLists) {
     const items = q(`SELECT movie_id FROM list_movies WHERE list_id = ? ORDER BY position LIMIT 4`).all(list.id) as any[];
     list.preview_movies = items.map((i: any) => MOVIE_MAP.get(i.movie_id)).filter(Boolean);
@@ -208,13 +223,14 @@ app.get("/lists", (c) => {
 });
 
 app.post("/lists", async (c) => {
+  const sessionId = getSessionId(c);
   const user = getCurrentUser(c);
   if (!user) return c.redirect("/login");
   const form = await c.req.formData();
   const name = (form.get("name") as string || "").trim();
   const description = (form.get("description") as string || "").trim();
   if (name) q("INSERT INTO lists (user_id, name, description) VALUES (?, ?, ?)").run(user.id, name, description);
-  return c.redirect("/lists");
+  return c.redirect(withSession(sessionId, "/lists"));
 });
 
 const port = Number(process.env.PORT) || 3000;

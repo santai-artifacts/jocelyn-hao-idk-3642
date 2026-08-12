@@ -496,6 +496,52 @@ export function layout(content: string, title: string, user: any): string {
     </div>
   </nav>
   ${content}
+  <script>
+  (function() {
+    var params = new URLSearchParams(location.search);
+
+    // Clear session on logout
+    if (params.get('_logout')) {
+      localStorage.removeItem('_cls');
+      params.delete('_logout');
+      history.replaceState(null, '', location.pathname + (params.size ? '?' + params : ''));
+      return;
+    }
+
+    // Persist session from URL to localStorage
+    var urlSession = params.get('_s');
+    if (urlSession) {
+      localStorage.setItem('_cls', urlSession);
+      params.delete('_s');
+      history.replaceState(null, '', location.pathname + (params.size ? '?' + params : '') + location.hash);
+    }
+
+    var session = localStorage.getItem('_cls');
+    if (!session) return;
+
+    // If page was rendered without a session (cookie blocked), reload with _s so server shows logged-in state
+    var hasUser = document.querySelector('.nav-user');
+    var isLoginPage = location.pathname === '/login';
+    if (!hasUser && !isLoginPage) {
+      location.replace(location.pathname + (location.search ? location.search + '&' : '?') + '_s=' + encodeURIComponent(session));
+      return;
+    }
+
+    // Inject _s into all internal links
+    document.querySelectorAll('a[href]').forEach(function(a) {
+      var href = a.getAttribute('href') || '';
+      if (!href.startsWith('/') || href.includes('_s=')) return;
+      a.setAttribute('href', href + (href.includes('?') ? '&' : '?') + '_s=' + encodeURIComponent(session));
+    });
+
+    // Inject _s into all form actions (stays in query string, works for POST too)
+    document.querySelectorAll('form').forEach(function(form) {
+      var action = form.getAttribute('action') || location.pathname;
+      if (!action.startsWith('/') || action.includes('_s=')) return;
+      form.setAttribute('action', action + (action.includes('?') ? '&' : '?') + '_s=' + encodeURIComponent(session));
+    });
+  })();
+  </script>
 </body>
 </html>`;
 }
