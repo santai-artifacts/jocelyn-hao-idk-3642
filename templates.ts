@@ -51,19 +51,19 @@ export function layout(content: string, title: string, user: any): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0f1014;
-      --surface: #1a1d23;
-      --surface2: #22262f;
-      --border: #2e3340;
-      --text: #e8eaf0;
-      --muted: #8a909e;
-      --accent: #00c896;
-      --accent-dim: #00c89622;
-      --accent2: #e8a838;
-      --red: #e84545;
-      --purple: #a855f7;
+      --bg: #0a0b14;
+      --surface: #13152a;
+      --surface2: #1d2040;
+      --border: #2d3158;
+      --text: #e8eaf5;
+      --muted: #8a8fa8;
+      --accent: #7c6ff7;
+      --accent-dim: #7c6ff722;
+      --accent2: #f0b429;
+      --red: #e85555;
+      --purple: #a78bfa;
       --radius: 8px;
-      --shadow: 0 2px 12px rgba(0,0,0,0.4);
+      --shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
 
     body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.6; min-height: 100vh; }
