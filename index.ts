@@ -3,7 +3,8 @@ import { serve } from "@hono/node-server";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import db, { q } from "./db.js";
 import { MOVIES, MOVIE_MAP, searchMovies, getMovie } from "./movies.js";
-import { layout, homePage, moviePage, profilePage, diaryPage, watchlistPage, listsPage, searchPage, loginPage } from "./templates.js";
+import { SHOWS, SHOW_MAP, searchShows, getShow } from "./tvshows.js";
+import { layout, homePage, moviePage, showsPage, showPage, profilePage, diaryPage, watchlistPage, listsPage, searchPage, loginPage } from "./templates.js";
 
 const app = new Hono();
 
@@ -231,6 +232,91 @@ app.post("/lists", async (c) => {
   const description = (form.get("description") as string || "").trim();
   if (name) q("INSERT INTO lists (user_id, name, description) VALUES (?, ?, ?)").run(user.id, name, description);
   return c.redirect(withSession(sessionId, "/lists"));
+});
+
+// ─── TV Shows ─────────────────────────────────────────────────────────────────
+
+app.get("/shows", (c) => {
+  const sq = c.req.query("q") || "";
+  const genre = c.req.query("genre") || "";
+  const user = getCurrentUser(c);
+  let results = sq ? searchShows(sq) : SHOWS;
+  if (genre) results = results.filter(s => s.genres.includes(genre));
+  const allGenres = [...new Set(SHOWS.flatMap(s => s.genres))].sort();
+  return c.html(layout(showsPage(results, sq, genre, allGenres, user), "TV Shows — CineLog", user));
+});
+
+app.get("/shows/:id", (c) => {
+  const show = getShow(c.req.param("id"));
+  if (!show) return c.notFound();
+  const user = getCurrentUser(c);
+
+  const allEntries = q(`
+    SELECT sde.*, u.username, u.display_name, u.avatar_color
+    FROM show_diary_entries sde JOIN users u ON sde.user_id = u.id
+    WHERE sde.show_id = ? AND sde.review != ''
+    ORDER BY sde.created_at DESC LIMIT 10
+  `).all(show.id) as any[];
+
+  const ratingDist = q(`
+    SELECT rating, COUNT(*) as count FROM show_diary_entries
+    WHERE show_id = ? GROUP BY rating ORDER BY rating
+  `).all(show.id) as any[];
+
+  const totalRatings = ratingDist.reduce((s: number, r: any) => s + Number(r.count), 0);
+  const avgRating = totalRatings > 0
+    ? ratingDist.reduce((s: number, r: any) => s + Number(r.rating) * Number(r.count), 0) / totalRatings
+    : show.avgRating;
+
+  let userEntry = null;
+  let inWatchlist = false;
+  if (user) {
+    userEntry = q("SELECT * FROM show_diary_entries WHERE user_id = ? AND show_id = ?").get(user.id, show.id) as any;
+    inWatchlist = !!(q("SELECT id FROM show_watchlist WHERE user_id = ? AND show_id = ?").get(user.id, show.id) as any);
+  }
+
+  return c.html(layout(showPage(show, allEntries, ratingDist, avgRating, totalRatings, userEntry, inWatchlist, user), `${show.title} — CineLog`, user));
+});
+
+app.post("/shows/:id/log", async (c) => {
+  const sessionId = getSessionId(c);
+  const user = getCurrentUser(c);
+  if (!user) return c.redirect("/login");
+  const show = getShow(c.req.param("id"));
+  if (!show) return c.notFound();
+
+  const form = await c.req.formData();
+  const rating = form.get("rating") ? parseInt(form.get("rating") as string) : null;
+  const review = (form.get("review") as string || "").trim();
+  const liked = form.get("liked") === "1" ? 1 : 0;
+  const seasonWatched = form.get("season_watched") ? parseInt(form.get("season_watched") as string) : null;
+  const watchedDate = form.get("watched_date") as string || new Date().toISOString().split("T")[0];
+
+  q(`
+    INSERT INTO show_diary_entries (user_id, show_id, rating, review, liked, season_watched, watched_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, show_id) DO UPDATE SET
+      rating = excluded.rating, review = excluded.review,
+      liked = excluded.liked, season_watched = excluded.season_watched,
+      watched_date = excluded.watched_date
+  `).run(user.id, show.id, rating, review, liked, seasonWatched, watchedDate);
+  q("DELETE FROM show_watchlist WHERE user_id = ? AND show_id = ?").run(user.id, show.id);
+
+  return c.redirect(withSession(sessionId, `/shows/${show.id}`));
+});
+
+app.post("/shows/:id/watchlist", async (c) => {
+  const sessionId = getSessionId(c);
+  const user = getCurrentUser(c);
+  if (!user) return c.redirect("/login");
+  const form = await c.req.formData();
+  const showId = c.req.param("id");
+  if (form.get("action") === "add") {
+    q("INSERT OR IGNORE INTO show_watchlist (user_id, show_id) VALUES (?, ?)").run(user.id, showId);
+  } else {
+    q("DELETE FROM show_watchlist WHERE user_id = ? AND show_id = ?").run(user.id, showId);
+  }
+  return c.redirect(withSession(sessionId, `/shows/${showId}`));
 });
 
 const port = Number(process.env.PORT) || 3000;

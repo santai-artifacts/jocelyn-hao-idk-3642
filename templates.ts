@@ -1,5 +1,7 @@
 import type { Movie } from "./movies.js";
 import { MOVIE_MAP } from "./movies.js";
+import type { TVShow } from "./tvshows.js";
+import { SHOW_MAP } from "./tvshows.js";
 
 function esc(s: any): string {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -471,6 +473,7 @@ export function layout(content: string, title: string, user: any): string {
       <a href="/" class="nav-logo">CineLog</a>
       <div class="nav-links">
         <a href="/films">Films</a>
+        <a href="/shows">Shows</a>
         ${user ? `<a href="/diary">Diary</a><a href="/watchlist">Watchlist</a><a href="/lists">Lists</a>` : ''}
       </div>
       <div class="nav-right">
@@ -961,4 +964,223 @@ export function loginPage(error?: string): string {
       <div class="login-note">No password needed. Just pick a username and go.</div>
     </div>
   </div>`;
+}
+
+// ─── Show Card ────────────────────────────────────────────────────────────────
+
+function showCard(show: TVShow, entry?: any): string {
+  const hasWatched = !!entry;
+  const liked = entry?.liked;
+  const statusDot = show.status === 'Ongoing'
+    ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:4px;vertical-align:middle"></span>'
+    : '';
+  return `
+    <a href="/shows/${show.id}" class="movie-card">
+      <div class="poster-wrap">
+        <img src="${esc(show.poster)}" alt="${esc(show.title)}" loading="lazy">
+        ${hasWatched ? `<div class="watched-badge">
+          ${stars(entry.rating)}
+          ${liked ? '<span class="heart-badge">♥</span>' : ''}
+        </div>` : ''}
+        <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.75);border-radius:4px;padding:2px 6px;font-size:10px;font-weight:600;color:#fff">${show.seasons}S</div>
+      </div>
+      <div class="card-info">
+        <span class="card-title">${esc(show.title)}</span>
+        <span class="card-year">${show.firstAired} ${statusDot}${show.network}</span>
+      </div>
+    </a>`;
+}
+
+// ─── Shows Browse Page ────────────────────────────────────────────────────────
+
+export function showsPage(shows: TVShow[], query: string, genre: string, allGenres: string[], user: any): string {
+  return `
+  <div class="search-hero">
+    <div style="max-width:1200px;margin:0 auto">
+      <div class="page-title" style="margin-bottom:16px">TV Shows</div>
+      <form class="search-form" action="/shows" method="get">
+        <input type="text" name="q" value="${esc(query)}" placeholder="Search by title, creator, cast, network..." autofocus>
+        <button type="submit">Search</button>
+      </form>
+      <div class="genre-filters" style="margin-top:16px">
+        <a href="/shows" class="genre-btn${!genre ? ' active' : ''}">All</a>
+        ${allGenres.map(g => `<a href="/shows?genre=${encodeURIComponent(g)}" class="genre-btn${genre === g ? ' active' : ''}">${esc(g)}</a>`).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    ${query || genre ? `<div style="color:var(--muted);font-size:14px;margin-bottom:20px">${shows.length} result${shows.length !== 1 ? 's' : ''} ${query ? `for "${esc(query)}"` : ''} ${genre ? `in ${esc(genre)}` : ''}</div>` : ''}
+    <div class="movies-grid">
+      ${shows.map(s => showCard(s)).join('')}
+    </div>
+    ${!shows.length ? `<div class="empty-state"><p>No shows found.</p></div>` : ''}
+  </div>`;
+}
+
+// ─── Show Detail Page ─────────────────────────────────────────────────────────
+
+export function showPage(show: TVShow, entries: any[], ratingDist: any[], avgRating: number, totalRatings: number, userEntry: any, inWatchlist: boolean, user: any): string {
+  const maxCount = Math.max(...ratingDist.map((r: any) => Number(r.count)), 1);
+  const displayRating = totalRatings > 0 ? avgRating : show.avgRating;
+  const displayTotal = totalRatings > 0 ? totalRatings : show.ratingsCount;
+  const isOngoing = show.status === 'Ongoing';
+
+  return `
+  <div class="film-hero">
+    <div class="film-hero-backdrop" style="background-image:url(${esc(show.backdrop)})"></div>
+    <div class="film-hero-inner">
+      <div class="film-poster">
+        <img src="${esc(show.poster)}" alt="${esc(show.title)}">
+      </div>
+      <div class="film-info">
+        <h1 class="film-title">${esc(show.title)}</h1>
+        <div class="film-meta">
+          <span>${show.firstAired}</span>
+          <span class="sep">·</span>
+          <span>${show.seasons} season${show.seasons !== 1 ? 's' : ''} · ${show.episodes} episodes</span>
+          <span class="sep">·</span>
+          <span style="${isOngoing ? 'color:#22c55e' : ''}">${show.status}</span>
+          <span class="sep">·</span>
+          <span>${esc(show.network)}</span>
+        </div>
+        <div class="film-director">Created by <a href="/shows?q=${encodeURIComponent(show.creator)}">${esc(show.creator)}</a></div>
+        <div class="genres">${show.genres.map(g => `<span class="genre-tag">${esc(g)}</span>`).join('')}</div>
+        <p class="film-synopsis">${esc(show.synopsis)}</p>
+        <div class="film-cast"><strong>Cast:</strong> ${esc(show.cast.join(', '))}</div>
+        <div class="film-rating-display">
+          <div>
+            <div class="avg-stars">${'★'.repeat(Math.round(displayRating / 2))}</div>
+            <div style="font-size:12px;color:var(--muted)">${displayRating.toFixed(1)} / 10 · ${displayTotal.toLocaleString()} ratings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="two-col">
+      <div class="main-col">
+        ${user ? `
+        <div class="log-section" style="margin-bottom:32px">
+          <h3>${userEntry ? 'Update your log' : 'Log this show'}</h3>
+          <form method="post" action="/shows/${esc(show.id)}/log">
+            <div class="form-group">
+              <label>Rating</label>
+              <div class="star-row" id="starRow">
+                ${[1,2,3,4,5,6,7,8,9,10].map(i => `<button type="button" class="star-btn${userEntry?.rating >= i ? ' active' : ''}" data-val="${i}">★</button>`).join('')}
+              </div>
+              <input type="hidden" name="rating" id="ratingInput" value="${userEntry?.rating || ''}">
+              <div style="font-size:12px;color:var(--muted);margin-top:4px" id="ratingLabel">${userEntry?.rating ? `${userEntry.rating}/10` : 'Click to rate'}</div>
+            </div>
+            <div class="form-group">
+              <label>Season watched up to</label>
+              <select name="season_watched" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:14px">
+                <option value="">— select season —</option>
+                ${Array.from({length: show.seasons}, (_, i) => i + 1).map(s =>
+                  `<option value="${s}" ${userEntry?.season_watched == s ? 'selected' : ''}>Season ${s}${s === show.seasons ? (isOngoing ? ' (latest)' : ' (finale)') : ''}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Review (optional)</label>
+              <textarea name="review" rows="3" placeholder="Share your thoughts...">${esc(userEntry?.review || '')}</textarea>
+            </div>
+            <div style="display:flex;gap:20px;align-items:center;margin-bottom:16px">
+              <div class="liked-toggle">
+                <input type="checkbox" name="liked" value="1" id="liked" ${userEntry?.liked ? 'checked' : ''}>
+                <label for="liked" title="Like this show">♥</label>
+                <span style="font-size:13px;color:var(--muted)">Like</span>
+              </div>
+              <div class="form-group" style="flex:1;margin:0">
+                <input type="date" name="watched_date" value="${esc(userEntry?.watched_date || new Date().toISOString().split('T')[0])}">
+              </div>
+            </div>
+            <button type="submit" class="btn-primary">${userEntry ? 'Update log' : 'Save to diary'}</button>
+          </form>
+        </div>
+
+        <div style="margin-bottom:32px">
+          <form method="post" action="/shows/${esc(show.id)}/watchlist">
+            <input type="hidden" name="action" value="${inWatchlist ? 'remove' : 'add'}">
+            <button type="submit" class="btn-ghost" style="display:inline-flex;align-items:center;gap:6px">
+              ${inWatchlist ? '✓ On watchlist' : '+ Add to watchlist'}
+            </button>
+          </form>
+        </div>
+        ` : `<div style="margin-bottom:32px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center">
+          <p style="color:var(--muted);margin-bottom:12px">Sign in to log this show</p>
+          <a href="/login" class="btn-primary">Sign in</a>
+        </div>`}
+
+        <div class="section-title">Reviews</div>
+        ${entries.length ? `<div class="reviews-grid">
+          ${entries.map(e => `
+          <div class="review-card">
+            <div class="review-header">
+              <div class="avatar" style="width:36px;height:36px;background:${esc(e.avatar_color)};font-size:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff">${(e.display_name || e.username).charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="review-user"><a href="/profile/${esc(e.username)}">${esc(e.display_name)}</a></div>
+                <div class="review-date">
+                  ${e.season_watched ? `S${e.season_watched} · ` : ''}${e.watched_date || ''} ${e.rating ? `· ${stars(Number(e.rating))}` : ''} ${e.liked ? '♥' : ''}
+                </div>
+              </div>
+            </div>
+            <div class="review-body">${esc(e.review)}</div>
+          </div>`).join('')}
+        </div>` : `<div class="empty-state"><p>No reviews yet. Be the first!</p></div>`}
+      </div>
+
+      <div class="side-col">
+        <div class="section-title">Rating Distribution</div>
+        <div class="rating-dist">
+          ${[10,9,8,7,6,5,4,3,2,1].map(i => {
+            const row = ratingDist.find((r: any) => Number(r.rating) === i);
+            const count = row ? Number(row.count) : 0;
+            const pct = (count / maxCount) * 100;
+            return `<div class="dist-row">
+              <div class="dist-label">${i}</div>
+              <div class="dist-bar-bg"><div class="dist-bar" style="width:${pct}%"></div></div>
+              <div class="dist-count">${count}</div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div style="margin-top:32px">
+          <div class="section-title">Show Info</div>
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Network</span><span>${esc(show.network)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Seasons</span><span>${show.seasons}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Episodes</span><span>${show.episodes}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Status</span><span style="${isOngoing ? 'color:#22c55e' : ''}">${show.status}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Language</span><span>${esc(show.language)}</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const stars = document.querySelectorAll('.star-btn');
+    const input = document.getElementById('ratingInput');
+    const label = document.getElementById('ratingLabel');
+    let current = parseInt(input.value) || 0;
+
+    function updateStars(val) {
+      stars.forEach(s => {
+        s.classList.toggle('active', parseInt(s.dataset.val) <= val);
+      });
+    }
+    updateStars(current);
+
+    stars.forEach(s => {
+      s.addEventListener('mouseover', () => updateStars(parseInt(s.dataset.val)));
+      s.addEventListener('mouseleave', () => updateStars(current));
+      s.addEventListener('click', () => {
+        current = parseInt(s.dataset.val);
+        input.value = current;
+        label.textContent = current + '/10';
+        updateStars(current);
+      });
+    });
+  </script>`;
 }

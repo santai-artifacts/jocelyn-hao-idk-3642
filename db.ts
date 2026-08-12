@@ -71,6 +71,29 @@ db.exec(`
     PRIMARY KEY (list_id, movie_id),
     FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS show_diary_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    show_id TEXT NOT NULL,
+    rating INTEGER CHECK(rating >= 1 AND rating <= 10),
+    review TEXT DEFAULT '',
+    liked INTEGER DEFAULT 0,
+    season_watched INTEGER,
+    watched_date TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, show_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS show_watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    show_id TEXT NOT NULL,
+    added_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, show_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 function q(sql: string) {
